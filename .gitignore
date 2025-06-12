@@ -1,2 +1,20 @@
 data
-venv
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python/
+venv/
+env/
+.ipynb_checkpoints/
+*.ipynb_checkpoints/
+.pytest_cache/
+.coverage
+.history/
+.DS_Store
+# Data files that should not be version controlled (e.g., large datasets)
+*.csv.zip
+*.parquet
+*.json
+*.sqlite3
