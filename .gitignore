@@ -16,3 +16,5 @@ env/
 *.parquet
 *.json
 *.sqlite3
+dvc_storage/
+*.txt
