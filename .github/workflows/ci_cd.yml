@@ -1,0 +1,74 @@
+# .github/workflows/ci_cd.yml
+name: CI/CD Pipeline for Insurance Risk Analytics
+
+on:
+  push:
+    branches:
+      - main
+      - task-* # Trigger on pushes to main and any task branch
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0 # Important for DVC to work correctly
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9' # Or your preferred Python version
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install dvc[s3] # If you were using S3 for DVC remote, otherwise just dvc
+
+    - name: Configure DVC remote (for CI/CD)
+      # For CI/CD, you typically use cloud storage for DVC remote
+      # For local DVC remote as configured, this step would be for pulling data
+      # If you only push from local, you might skip this for pulling.
+      # For demonstration with local DVC, let's simulate a 'pull' by just ensuring cache
+      run: |
+        echo "DVC is pulling data from cache. For a real remote, configure secrets here."
+        # If you were using a cloud remote (e.g., S3), you'd configure it here using secrets
+        # dvc remote modify myremote url s3://my-dvc-bucket
+        # dvc remote modify myremote access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+        # dvc remote modify myremote secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        # For local, DVC pull relies on cache in the runner, which won't persist across runs.
+        # This is where a shared remote (like S3/GCS) becomes necessary for CI/CD.
+
+    # This is a placeholder for actual data pull if a shared DVC remote existed
+    # - name: DVC pull data (assuming shared DVC remote)
+    #   run: |
+    #     dvc pull data/raw/MachineLearningRating_v3.txt.dvc # Updated DVC file
+    #     dvc pull data/processed/cleaned_data.parquet.dvc
+    #     dvc pull models/alpha_care_total_premium_predictor.pkl.dvc # Updated model name
+
+    - name: Run Data Preprocessing (simulating pipeline)
+      # This step assumes you have a script that generates `cleaned_data.parquet`
+      # It will use the RAW_DATA_PATH from src/utils.py, which is now correct
+      run: |
+        python -c "import pandas as pd; from src.utils import load_raw_data; from src.data_tools import preprocess_data, save_processed_data; df = load_raw_data(); df_processed = preprocess_data(df.copy()); save_processed_data(df_processed)"
+      # Note: For production, you'd have dedicated scripts for these pipeline steps
+      # e.g., `python scripts/data_preprocessing.py`
+
+    - name: Run Model Training (simulating pipeline)
+      # This step assumes a script that trains and saves the model
+      run: |
+        python -c "import pandas as pd; from src.data_tools import load_processed_data; from src.models import prepare_features_for_modeling, train_and_evaluate_ml_model, save_model; df = load_processed_data(); X, y, preprocessor, num_feat, cat_feat = prepare_features_for_modeling(df.copy()); model, _, _ = train_and_evaluate_ml_model(X, y, preprocessor, model_type='RandomForest'); save_model(model)"
+
+    - name: Run Tests (placeholder)
+      # This assumes you have tests in your `tests/` directory
+      run: |
+        pytest tests/
+
+    - name: Report Success
+      run: echo "CI/CD Pipeline Finished Successfully!"
