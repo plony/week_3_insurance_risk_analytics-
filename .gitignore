@@ -1,4 +1,3 @@
-data
 # Python
 __pycache__/
 *.pyc
@@ -13,7 +12,6 @@ env/
 .coverage
 .history/
 .DS_Store
-# Data files that should not be version controlled (e.g., large datasets)
 *.csv.zip
 *.parquet
 *.json
