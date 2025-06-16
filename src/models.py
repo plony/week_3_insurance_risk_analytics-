@@ -5,6 +5,11 @@ from sklearn.metrics import mean_squared_error, r2_score, accuracy_score, precis
 import matplotlib.pyplot as plt
 import seaborn as sns
 import shap
+import xgboost
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor # Added for isinstance checks
+from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor # Added for isinstance checks
+from sklearn.linear_model import LogisticRegression # Added for isinstance checks
+
 
 class ModelEvaluator:
     def __init__(self, model_type='classification'):
@@ -53,7 +58,7 @@ class ModelEvaluator:
                 axes[1].set_title(f'ROC Curve - {model_name} (Probabilities not provided)')
 
             plt.tight_layout()
-            plt.show()
+            plt.show() # <--- Crucial for displaying plots
 
         elif self.model_type == 'regression':
             metrics['RMSE'] = np.sqrt(mean_squared_error(y_true, y_pred))
@@ -70,9 +75,10 @@ class ModelEvaluator:
             plt.ylabel("Predicted Values")
             plt.title(f"{model_name}: Actual vs Predicted Values")
             plt.grid(True)
-            plt.show()
+            plt.show() # <--- Crucial for displaying plots
 
         return metrics
+
 
 class ModelInterpreter:
     def __init__(self, model, X_transformed_df):
@@ -93,15 +99,18 @@ class ModelInterpreter:
                     self.explainer = shap.TreeExplainer(self.model)
                 except Exception:
                     # Fallback for models not directly supported by TreeExplainer (e.g., if it's wrapped)
+                    print("Warning: TreeExplainer failed, falling back to KernelExplainer. This might be slow.")
                     self.explainer = shap.KernelExplainer(self.model.predict, self.X_transformed_df.sample(min(100, len(self.X_transformed_df)), random_state=42))
             else:
+                print("Using KernelExplainer. This might be slow for large datasets.")
                 self.explainer = shap.KernelExplainer(self.model.predict, self.X_transformed_df.sample(min(100, len(self.X_transformed_df)), random_state=42))
 
             # Calculate SHAP values
-            if isinstance(self.model, (LogisticRegression,)): # For models where predict_proba is preferred
+            if isinstance(self.model, (LogisticRegression,)): # For models where predict_proba is preferred for SHAP
+                # For binary classification, shap_values will be a list of two arrays. We take the one for the positive class.
                 self.shap_values = self.explainer.shap_values(self.X_transformed_df)
                 if isinstance(self.shap_values, list) and len(self.shap_values) == 2:
-                    self.shap_values = self.shap_values[1] # For binary classification, take SHAP values for the positive class
+                    self.shap_values = self.shap_values[1] # SHAP values for the positive class (class 1)
             else:
                 self.shap_values = self.explainer.shap_values(self.X_transformed_df)
 
@@ -127,7 +136,7 @@ class ModelInterpreter:
             raise ValueError("plot_type must be 'bar' or 'summary'.")
 
         plt.tight_layout()
-        plt.show()
+        plt.show() # <--- Crucial for displaying plots
 
         # Return top features for textual interpretation
         if isinstance(self.shap_values, np.ndarray):
