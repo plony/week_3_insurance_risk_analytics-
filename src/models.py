@@ -1,156 +1,145 @@
 # src/models.py
-# models.py
-
 import pandas as pd
 import numpy as np
-from sklearn.metrics import mean_squared_error, r2_score, accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, confusion_matrix
-import shap
+from sklearn.metrics import mean_squared_error, r2_score, accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, confusion_matrix, ConfusionMatrixDisplay, RocCurveDisplay
 import matplotlib.pyplot as plt
 import seaborn as sns
+import shap
 
 class ModelEvaluator:
-    """
-    A class to evaluate regression and classification models.
-    """
-    def __init__(self, model_type='regression'):
-        # Validates model_type upon initialization
-        if model_type not in ['regression', 'classification']:
-            raise ValueError("model_type must be 'regression' or 'classification'")
+    def __init__(self, model_type='classification'):
+        if model_type not in ['classification', 'regression']:
+            raise ValueError("model_type must be 'classification' or 'regression'")
         self.model_type = model_type
 
     def evaluate(self, y_true, y_pred, y_prob=None, model_name="Model"):
         """
-        Evaluates the model based on its type.
-        For regression: RMSE, R-squared.
-        For classification: Accuracy, Precision, Recall, F1-Score, ROC-AUC, Confusion Matrix.
-        
-        Parameters:
-        - y_true (array-like): True labels or values.
-        - y_pred (array-like): Predicted labels or values.
-        - y_prob (array-like, optional): Predicted probabilities for the positive class (for classification).
-        - model_name (str): Name of the model being evaluated.
-        
-        Returns:
-        - dict: A dictionary containing the evaluation metrics.
+        Evaluates model performance based on its type.
+        For classification, plots confusion matrix and ROC curve.
         """
+        metrics = {}
         print(f"\n--- {model_name} Performance ({self.model_type.capitalize()}) ---")
-        results = {}
 
-        if self.model_type == 'regression':
-            rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-            r2 = r2_score(y_true, y_pred)
-            print(f"RMSE: {rmse:.4f}")
-            print(f"R-squared: {r2:.4f}")
-            results['RMSE'] = rmse
-            results['R-squared'] = r2
-        elif self.model_type == 'classification':
-            accuracy = accuracy_score(y_true, y_pred)
-            precision = precision_score(y_true, y_pred, zero_division=0) # zero_division=0 to handle cases where no positive predictions are made
-            recall = recall_score(y_true, y_pred, zero_division=0)
-            f1 = f1_score(y_true, y_pred, zero_division=0)
+        if self.model_type == 'classification':
+            metrics['Accuracy'] = accuracy_score(y_true, y_pred)
+            metrics['Precision'] = precision_score(y_true, y_pred)
+            metrics['Recall'] = recall_score(y_true, y_pred)
+            metrics['F1-Score'] = f1_score(y_true, y_pred)
+            if y_prob is not None:
+                metrics['ROC-AUC'] = roc_auc_score(y_true, y_prob)
+            else:
+                metrics['ROC-AUC'] = np.nan # Or raise error if ROC-AUC is mandatory for classification
+
+            for metric_name, value in metrics.items():
+                print(f"{metric_name}: {value:.4f}")
+
             cm = confusion_matrix(y_true, y_pred)
-
-            print(f"Accuracy: {accuracy:.4f}")
-            print(f"Precision: {precision:.4f}")
-            print(f"Recall: {recall:.4f}")
-            print(f"F1-Score: {f1:.4f}")
+            metrics['Confusion Matrix'] = cm
             print("\nConfusion Matrix:")
             print(cm)
 
-            results['Accuracy'] = accuracy
-            results['Precision'] = precision
-            results['Recall'] = recall
-            results['F1-Score'] = f1
-            results['Confusion Matrix'] = cm
+            # Plot Confusion Matrix
+            fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+            ConfusionMatrixDisplay.from_predictions(y_true, y_pred, ax=axes[0], cmap='Blues')
+            axes[0].set_title(f'Confusion Matrix - {model_name}')
 
+            # Plot ROC Curve
             if y_prob is not None:
-                # Check if there's at least one positive class in y_true for ROC-AUC
-                if len(np.unique(y_true)) > 1:
-                    try:
-                        roc_auc = roc_auc_score(y_true, y_prob)
-                        print(f"ROC-AUC: {roc_auc:.4f}")
-                        results['ROC-AUC'] = roc_auc
-                    except ValueError:
-                        print("ROC-AUC could not be calculated (requires positive class in y_true and y_prob).")
-                        results['ROC-AUC'] = np.nan
-                else:
-                    print("ROC-AUC not applicable: only one class present in true labels.")
-                    results['ROC-AUC'] = np.nan
+                RocCurveDisplay.from_predictions(y_true, y_prob, ax=axes[1])
+                axes[1].set_title(f'ROC Curve - {model_name}')
+                axes[1].plot([0, 1], [0, 1], 'k--', label='Random Guess') # Add diagonal line
+                axes[1].legend()
+            else:
+                axes[1].set_title(f'ROC Curve - {model_name} (Probabilities not provided)')
 
-        return results
+            plt.tight_layout()
+            plt.show()
+
+        elif self.model_type == 'regression':
+            metrics['RMSE'] = np.sqrt(mean_squared_error(y_true, y_pred))
+            metrics['R-squared'] = r2_score(y_true, y_pred)
+
+            for metric_name, value in metrics.items():
+                print(f"{metric_name}: {value:.4f}")
+            
+            # Plotting actual vs predicted
+            plt.figure(figsize=(8, 6))
+            sns.scatterplot(x=y_true, y=y_pred, alpha=0.6)
+            plt.plot([y_true.min(), y_true.max()], [y_true.min(), y_true.max()], 'r--', lw=2)
+            plt.xlabel("Actual Values")
+            plt.ylabel("Predicted Values")
+            plt.title(f"{model_name}: Actual vs Predicted Values")
+            plt.grid(True)
+            plt.show()
+
+        return metrics
 
 class ModelInterpreter:
-    """
-    A class for model interpretability using SHAP values.
-    """
     def __init__(self, model, X_transformed_df):
         self.model = model
-        self.X_transformed_df = X_transformed_df # DataFrame of preprocessed features
-        
-        # Initialize explainer based on model type (TreeExplainer for tree models, KernelExplainer for others)
-        # Check if the model has a 'feature_importances_' attribute or is an XGBoost/RandomForest model
-        model_type_str = str(type(model))
-        if "XGB" in model_type_str or "RandomForest" in model_type_str:
-            self.explainer = shap.TreeExplainer(model)
-        else:
-            # For linear models, KernelExplainer works but can be slow.
-            # Using a background dataset sample for performance.
-            if self.X_transformed_df.empty:
-                print("Warning: X_transformed_df is empty, KernelExplainer cannot be initialized.")
-                self.explainer = None
+        self.X_transformed_df = X_transformed_df
+        self.explainer = None
+        self.shap_values = None
+
+    def _initialize_shap(self):
+        if self.explainer is None:
+            # For tree-based models, use TreeExplainer
+            if hasattr(self.model, 'tree_') or isinstance(self.model, (
+                RandomForestClassifier, RandomForestRegressor,
+                DecisionTreeClassifier, DecisionTreeRegressor,
+                xgboost.XGBClassifier, xgboost.XGBRegressor
+            )):
+                try:
+                    self.explainer = shap.TreeExplainer(self.model)
+                except Exception:
+                    # Fallback for models not directly supported by TreeExplainer (e.g., if it's wrapped)
+                    self.explainer = shap.KernelExplainer(self.model.predict, self.X_transformed_df.sample(min(100, len(self.X_transformed_df)), random_state=42))
             else:
-                background_data_sample = self.X_transformed_df.sample(min(200, len(self.X_transformed_df)), random_state=42) # Increased sample size for better approximation
-                self.explainer = shap.KernelExplainer(model.predict, background_data_sample)
+                self.explainer = shap.KernelExplainer(self.model.predict, self.X_transformed_df.sample(min(100, len(self.X_transformed_df)), random_state=42))
+
+            # Calculate SHAP values
+            if isinstance(self.model, (LogisticRegression,)): # For models where predict_proba is preferred
+                self.shap_values = self.explainer.shap_values(self.X_transformed_df)
+                if isinstance(self.shap_values, list) and len(self.shap_values) == 2:
+                    self.shap_values = self.shap_values[1] # For binary classification, take SHAP values for the positive class
+            else:
+                self.shap_values = self.explainer.shap_values(self.X_transformed_df)
 
     def plot_feature_importance(self, num_features=10, plot_type='bar'):
         """
-        Generates and plots feature importance (SHAP values).
-        
-        Parameters:
-        - num_features (int): Number of top features to display.
-        - plot_type (str): Type of SHAP plot ('bar' or 'summary').
-        
-        Returns:
-        - pd.DataFrame: A DataFrame of top features and their SHAP importance.
+        Plots global feature importance using SHAP values.
+        plot_type can be 'bar' (mean absolute SHAP) or 'summary' (beeswarm plot).
         """
-        if self.X_transformed_df.empty or self.explainer is None:
-            print("No data or explainer available for SHAP explanation.")
-            return pd.DataFrame()
+        self._initialize_shap()
 
-        # Calculate SHAP values for a subset of the data for performance for non-tree models
-        # For tree models, can use more data or even all if feasible.
-        sample_size = min(2000, len(self.X_transformed_df)) # Increased sample size for better SHAP plots
-        X_sample = self.X_transformed_df.sample(sample_size, random_state=42)
-        
-        shap_values = self.explainer.shap_values(X_sample)
+        if self.shap_values is None:
+            print("SHAP values could not be calculated. Skipping feature importance plot.")
+            return
 
-        # For multi-output models (e.g., LogisticRegression for binary classification), shap_values might be a list.
-        # Take the SHAP values for the positive class (class 1)
-        if isinstance(shap_values, list) and len(shap_values) > 1:
-            shap_values = shap_values[1] # For binary classification, index 1 is the positive class
-
-        # Summarize SHAP values (mean absolute SHAP value for each feature)
-        # Ensure shap_values is 2D for mean(0)
-        if len(shap_values.shape) > 2: # For potential multi-output explanations not handled by list unpacking
-             shap_values = shap_values.reshape(-1, shap_values.shape[-1]) # Flatten to 2D if necessary
-
-        shap_abs_mean = np.abs(shap_values).mean(0)
-        
-        feature_importance_df = pd.DataFrame({
-            'Feature': X_sample.columns,
-            'SHAP_Importance': shap_abs_mean
-        }).sort_values(by='SHAP_Importance', ascending=False)
-
-        print(f"\n--- Top {num_features} Features by SHAP Importance ---")
-        print(feature_importance_df.head(num_features))
-
-        plt.figure(figsize=(12, 7)) # Adjusted figure size for better readability
+        plt.figure(figsize=(10, 6))
         if plot_type == 'bar':
-            shap.summary_plot(shap_values, X_sample, plot_type="bar", show=False, max_display=num_features)
+            shap.summary_plot(self.shap_values, self.X_transformed_df, plot_type="bar", show=False)
+            plt.title(f"Top {num_features} Features by Mean Absolute SHAP Value")
         elif plot_type == 'summary':
-            shap.summary_plot(shap_values, X_sample, show=False, max_display=num_features)
-        plt.title(f"SHAP Feature Importance ({'Mean Absolute' if plot_type == 'bar' else 'Summary'})")
+            shap.summary_plot(self.shap_values, self.X_transformed_df, max_display=num_features, show=False)
+            plt.title(f"SHAP Summary Plot of Top {num_features} Features")
+        else:
+            raise ValueError("plot_type must be 'bar' or 'summary'.")
+
         plt.tight_layout()
         plt.show()
 
-        return feature_importance_df.head(num_features)
+        # Return top features for textual interpretation
+        if isinstance(self.shap_values, np.ndarray):
+            # Calculate mean absolute SHAP values
+            mean_abs_shap_values = np.abs(self.shap_values).mean(axis=0)
+            feature_importance_df = pd.DataFrame({
+                'Feature': self.X_transformed_df.columns,
+                'SHAP_Importance': mean_abs_shap_values
+            })
+            top_features_df = feature_importance_df.sort_values(by='SHAP_Importance', ascending=False).head(num_features)
+            print("\n--- Top Features by SHAP Importance ---")
+            print(top_features_df)
+            return top_features_df
+        else:
+            return None # Or handle other SHAP value types
